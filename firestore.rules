@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function isVerifiedCreator() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.verifiedCreator == true;
+    }
+    function counterOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ---------- users ----------
+    match /users/{uid} {
+      allow read: if true;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.verifiedCreator == false;
+      allow update: if isAdmin()
+        || (signedIn() && request.auth.uid == uid
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verifiedCreator']));
+      allow delete: if isAdmin() || (signedIn() && request.auth.uid == uid);
+    }
+
+    // ---------- admins (membership managed manually in console) ----------
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ---------- demand posts ----------
+    match /demandPosts/{postId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.status == 'active'
+        && request.resource.data.voteCount == 0
+        && request.resource.data.followCount == 0
+        && request.resource.data.commentCount == 0
+        && request.resource.data.claimCount == 0
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 8
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.description.size() <= 4000;
+      allow update: if isAdmin()
+        // owner edits content fields only
+        || (signedIn() && resource.data.authorId == request.auth.uid
+            && counterOnly(['title','description','category','budgetBand','urgency','tags','updatedAt']))
+        // any signed-in user may adjust counters by exactly one step (vote/follow toggles, comment/claim adds)
+        || (signedIn()
+            && counterOnly(['voteCount','followCount','commentCount','claimCount','updatedAt'])
+            && (request.resource.data.voteCount - resource.data.voteCount) >= -1
+            && (request.resource.data.voteCount - resource.data.voteCount) <= 1
+            && (request.resource.data.followCount - resource.data.followCount) >= -1
+            && (request.resource.data.followCount - resource.data.followCount) <= 1
+            && (request.resource.data.commentCount - resource.data.commentCount) >= 0
+            && (request.resource.data.commentCount - resource.data.commentCount) <= 1
+            && (request.resource.data.claimCount - resource.data.claimCount) >= 0
+            && (request.resource.data.claimCount - resource.data.claimCount) <= 1);
+      allow delete: if isAdmin();
+
+      match /votes/{voterId} {
+        allow read: if true;
+        allow create, delete: if signedIn() && request.auth.uid == voterId;
+        allow update: if false;
+      }
+      match /follows/{followerId} {
+        allow read: if true;
+        allow create, delete: if signedIn() && request.auth.uid == followerId;
+        allow update: if false;
+      }
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if signedIn()
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.body is string
+          && request.resource.data.body.size() >= 1
+          && request.resource.data.body.size() <= 2000;
+        allow update: if isAdmin();
+        allow delete: if isAdmin() || (signedIn() && resource.data.authorId == request.auth.uid);
+      }
+      match /claims/{claimId} {
+        allow read: if true;
+        allow create: if isVerifiedCreator()
+          && request.resource.data.creatorId == request.auth.uid
+          && request.resource.data.listingUrl.matches('https://.*')
+          && request.resource.data.title.size() >= 3
+          && request.resource.data.title.size() <= 120;
+        allow update: if isAdmin();
+        allow delete: if isAdmin() || (signedIn() && resource.data.creatorId == request.auth.uid);
+      }
+    }
+
+    // ---------- reports ----------
+    match /reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if signedIn() && request.resource.data.reporterId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- analytics events (append-only, first-party log) ----------
+    match /events/{eventId} {
+      allow read: if isAdmin();
+      allow create: if true;
+      allow update, delete: if false;
+    }
+  }
+}

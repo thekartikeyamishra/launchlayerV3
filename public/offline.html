@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Offline · LaunchLayer</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #f6f7f9; color: #14213d;
+         display: grid; place-items: center; min-height: 100vh; margin: 0; padding: 24px; text-align: center; }
+  .mark { width: 56px; height: 56px; border-radius: 14px; background: #0e7c66; color: #fff;
+          display: grid; place-items: center; font-size: 28px; font-weight: 700; margin: 0 auto 16px; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { color: #5b6b85; font-size: 14px; max-width: 340px; margin: 0 auto 20px; }
+  button { background: #0e7c66; color: #fff; border: 0; border-radius: 10px; padding: 10px 20px;
+           font-size: 14px; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div>
+    <div class="mark" aria-hidden="true">L</div>
+    <h1>You're offline</h1>
+    <p>LaunchLayer shows only live, real data — so there's nothing cached to show you here.
+       Reconnect and the board will be exactly where you left it.</p>
+    <button onclick="location.reload()">Try again</button>
+  </div>
+</body>
+</html>
