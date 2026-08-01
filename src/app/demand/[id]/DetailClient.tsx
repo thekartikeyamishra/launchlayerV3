@@ -272,7 +272,7 @@ export default function DetailClient({ id }: { id: string }) {
           </h2>
           
           {profile?.verifiedCreator && !showClaimForm && (
-            <Button onClick={() => setShowClaimForm(true)} size="sm">Offer your solution</Button>
+            <Button onClick={() => setShowClaimForm(true)} className="px-3 py-1.5 text-xs">Offer your solution</Button>
           )}
         </div>
 
