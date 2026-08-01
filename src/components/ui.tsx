@@ -13,7 +13,7 @@ export function Button({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--trust)] disabled:cursor-not-allowed disabled:opacity-50";
+    "press inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--trust)] disabled:cursor-not-allowed disabled:opacity-50";
   const variants = {
     primary: "bg-[var(--trust)] text-white hover:bg-[var(--trust-strong)]",
     secondary: "border border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--trust)]",
@@ -25,7 +25,7 @@ export function Button({
 
 export function LinkButton({ href, children, variant = "primary" }: { href: string; children: ReactNode; variant?: "primary" | "secondary" }) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--trust)]";
+    "press inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--trust)]";
   const variants = {
     primary: "bg-[var(--trust)] text-white hover:bg-[var(--trust-strong)]",
     secondary: "border border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--trust)]",
@@ -104,7 +104,7 @@ export function EmptyState({ title, body, action }: { title: string; body: strin
 }
 
 export function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded-lg bg-[var(--line)]/60 ${className}`} aria-hidden="true" />;
+  return <div className={`skeleton-shimmer rounded-lg ${className}`} aria-hidden="true" />;
 }
 
 export function ErrorNote({ message }: { message: string }) {

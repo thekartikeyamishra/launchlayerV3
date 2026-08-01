@@ -15,6 +15,11 @@ export default function Footer() {
               we never fake demand, activity, or reviews.
             </p>
           </div>
+          <nav aria-label="Explore" className="flex flex-col gap-2 text-sm">
+            <Link href="/demand" className="text-[var(--muted)] hover:text-[var(--ink)]">Demand Board</Link>
+            <Link href="/opportunities" className="text-[var(--muted)] hover:text-[var(--ink)]">Creator Opportunities</Link>
+            <Link href="/pulse" className="text-[var(--muted)] hover:text-[var(--ink)]">Marketplace Pulse</Link>
+          </nav>
           <nav aria-label="Legal" className="flex flex-col gap-2 text-sm">
             <Link href="/legal/terms" className="text-[var(--muted)] hover:text-[var(--ink)]">Terms of Service</Link>
             <Link href="/legal/privacy" className="text-[var(--muted)] hover:text-[var(--ink)]">Privacy Policy</Link>

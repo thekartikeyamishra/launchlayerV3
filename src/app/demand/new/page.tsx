@@ -12,6 +12,7 @@ import { createDemandPost } from "@/lib/db";
 import { demandPostSchema } from "@/lib/schemas";
 import { BUDGET_LABELS, CATEGORIES, URGENCY_LABELS } from "@/lib/categories";
 import { logEvent } from "@/lib/analytics";
+import { markMission, setJustPosted } from "@/lib/missions";
 import { Button, ErrorNote, Field, Select, TextArea, TextInput } from "@/components/ui";
 
 export default function NewDemandPage() {
@@ -95,6 +96,8 @@ export default function NewDemandPage() {
     try {
       const id = await createDemandPost(parsed.data, user.uid, user.displayName ?? user.email?.split("@")[0] ?? "Member");
       logEvent("demand_post.created.v1", { category: parsed.data.category, urgency: parsed.data.urgency });
+      markMission("posted");
+      setJustPosted();
       router.push(`/demand/${id}`);
     } catch {
       setError("Your request couldn't be posted. Check your connection and try again — nothing was saved.");

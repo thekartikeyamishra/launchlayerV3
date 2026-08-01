@@ -11,6 +11,7 @@ import type { CategoryStat, DemandPost } from "@/lib/types";
 import DemandCard from "@/components/DemandCard";
 import { EmptyState, LinkButton, Skeleton } from "@/components/ui";
 import { logEvent } from "@/lib/analytics";
+import GettingStarted from "@/components/GettingStarted";
 
 export default function HomePage() {
   const [trending, setTrending] = useState<DemandPost[] | null>(null);
@@ -37,24 +38,26 @@ export default function HomePage() {
 
   return (
     <div className="space-y-14">
-      <section className="pt-6 text-center sm:pt-12">
+      <section className="anim-rise pt-6 text-center sm:pt-12">
         <p className="mx-auto inline-flex items-center gap-2 rounded-full border border-[var(--trust)]/30 bg-[var(--trust)]/5 px-3 py-1 text-xs font-semibold text-[var(--trust-strong)]">
           Every signal here is real — no fake activity, ever
         </p>
-        <h1 className="font-display mx-auto mt-5 max-w-3xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
+        <h1 className="anim-rise anim-d-1 font-display mx-auto mt-5 max-w-3xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
           Post what you need.
           <br />
           Build what&apos;s <span className="text-[var(--trust)]">actually wanted.</span>
         </h1>
-        <p className="mx-auto mt-4 max-w-xl text-base text-[var(--muted)]">
+        <p className="anim-rise anim-d-2 mx-auto mt-4 max-w-xl text-base text-[var(--muted)]">
           LaunchLayer is a public board of real demand for AI solutions. Buyers describe the
           problem; creators see genuine market signals before writing a line of code.
         </p>
-        <div className="mt-7 flex flex-wrap justify-center gap-3">
+        <div className="anim-rise anim-d-3 mt-7 flex flex-wrap justify-center gap-3">
           <LinkButton href="/demand/new">Post a demand request</LinkButton>
           <LinkButton href="/opportunities" variant="secondary">Explore creator opportunities</LinkButton>
         </div>
       </section>
+
+      <GettingStarted />
 
       <section aria-labelledby="trending-heading">
         <div className="mb-4 flex items-end justify-between">

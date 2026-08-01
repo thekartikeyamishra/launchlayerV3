@@ -18,7 +18,7 @@ function timeAgo(ts: DemandPost["createdAt"]): string {
 
 export default function DemandCard({ post }: { post: DemandPost }) {
   return (
-    <article className="group rounded-xl border border-[var(--line)] bg-white p-4 transition-colors hover:border-[var(--trust)]/50">
+    <article className="card-lift group rounded-xl border border-[var(--line)] bg-white p-4 hover:border-[var(--trust)]/50">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

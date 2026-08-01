@@ -95,8 +95,10 @@ function Board() {
       ) : (
         <>
           <div className="space-y-3">
-            {posts.map((p) => (
-              <DemandCard key={p.id} post={p} />
+            {posts.map((p, i) => (
+              <div key={p.id} className={i < 5 ? `anim-rise anim-d-${Math.min(i, 4)}` : undefined}>
+                <DemandCard post={p} />
+              </div>
             ))}
           </div>
           {hasMore && (
