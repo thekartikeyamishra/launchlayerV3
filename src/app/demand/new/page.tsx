@@ -3,17 +3,18 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { sendEmailVerification } from "firebase/auth";
 import { useAuth } from "@/context/AuthContext";
-import { createDemandPost } from "@/lib/db";
+import { createDemandPost, fetchPostsForSearch, searchPosts } from "@/lib/db";
 import { demandPostSchema } from "@/lib/schemas";
 import { BUDGET_LABELS, CATEGORIES, URGENCY_LABELS } from "@/lib/categories";
 import { logEvent } from "@/lib/analytics";
 import { markMission, setJustPosted } from "@/lib/missions";
 import { Button, ErrorNote, Field, Select, TextArea, TextInput } from "@/components/ui";
+import type { DemandPost } from "@/lib/types";
 
 export default function NewDemandPage() {
   const { user, loading } = useAuth();
@@ -30,6 +31,35 @@ export default function NewDemandPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [verifySent, setVerifySent] = useState(false);
+  const [similar, setSimilar] = useState<DemandPost[]>([]);
+
+  // Prefill from the homepage hero handoff (?title=...)
+  useEffect(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get("title");
+      if (t) setForm((f) => (f.title ? f : { ...f, title: t.slice(0, 120) }));
+    } catch {
+      // no-op
+    }
+  }, []);
+  const searchPool = useRef<DemandPost[] | null>(null);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Duplicate suggestion (Ch. 10.2): before posting, surface similar existing requests.
+  useEffect(() => {
+    if (debounce.current) clearTimeout(debounce.current);
+    const title = form.title.trim();
+    if (title.length < 12) { setSimilar([]); return; }
+    debounce.current = setTimeout(async () => {
+      try {
+        if (!searchPool.current) searchPool.current = await fetchPostsForSearch();
+        setSimilar(searchPosts(searchPool.current, title).slice(0, 3));
+      } catch {
+        setSimilar([]);
+      }
+    }, 400);
+    return () => { if (debounce.current) clearTimeout(debounce.current); };
+  }, [form.title]);
 
   if (loading) return <p className="text-sm text-[var(--muted)]">Loading…</p>;
 
@@ -115,6 +145,23 @@ export default function NewDemandPage() {
         <Field label="What do you need?" htmlFor="title" error={fieldErrors.title} hint="One clear sentence, e.g. “An AI agent that reads invoices in German and exports to Tally.”">
           <TextInput id="title" value={form.title} maxLength={120} onChange={(e) => setForm({ ...form, title: e.target.value })} />
         </Field>
+        {similar.length > 0 && (
+          <div className="anim-rise rounded-lg border border-[var(--demand)]/30 bg-[var(--demand)]/5 p-4">
+            <p className="text-sm font-semibold text-[var(--demand)]">Similar requests already exist</p>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">
+              Voting on an existing request concentrates the demand signal — consider these before posting a duplicate:
+            </p>
+            <ul className="mt-2 space-y-1">
+              {similar.map((s) => (
+                <li key={s.id}>
+                  <Link href={`/demand/${s.id}`} target="_blank" className="text-sm font-medium text-[var(--trust-strong)] hover:underline">
+                    {s.title} <span className="tabular-nums text-[var(--muted)]">({s.voteCount} votes)</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <Field label="Describe the problem" htmlFor="description" error={fieldErrors.description} hint="What it should do, what you use today, what success looks like.">
           <TextArea id="description" rows={6} value={form.description} maxLength={4000} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         </Field>

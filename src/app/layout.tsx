@@ -5,12 +5,14 @@
 
 import type { Metadata, Viewport } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
-import Script from "next/script";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { SITE_URL } from "@/lib/site";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import Analytics from "@/components/Analytics";
+import ConsentBanner from "@/components/ConsentBanner";
 
 const body = Inter({ subsets: ["latin"], variable: "--font-body", display: "swap" });
 const display = Space_Grotesk({ subsets: ["latin"], variable: "--font-display", display: "swap" });
@@ -22,7 +24,8 @@ export const metadata: Metadata = {
   },
   description:
     "LaunchLayer is the trust layer for the AI economy. Post what you need, vote on real demand, and build AI solutions people are actually asking for.",
-  metadataBase: new URL("https://launchlayer.me"),
+  metadataBase: new URL(SITE_URL),
+  alternates: { canonical: "/" },
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -49,29 +52,41 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-const gaId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+const orgJsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      name: "LaunchLayer",
+      url: SITE_URL,
+      logo: `${SITE_URL}/icons/icon-512.png`,
+      description:
+        "The trust layer for the AI economy — a public board of real demand for AI solutions.",
+    },
+    {
+      "@type": "WebSite",
+      name: "LaunchLayer",
+      url: SITE_URL,
+    },
+  ],
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${body.variable} ${display.variable}`} suppressHydrationWarning>
       <body className="flex min-h-screen flex-col antialiased">
-        {gaId ? (
-          <>
-            <Script src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} strategy="afterInteractive" />
-            <Script id="ga4" strategy="afterInteractive">
-              {`window.dataLayer = window.dataLayer || [];
-                function gtag(){dataLayer.push(arguments);}
-                gtag('js', new Date());
-                gtag('config', '${gaId}', { anonymize_ip: true });`}
-            </Script>
-          </>
-        ) : null}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
+        />
         <AuthProvider>
           <Header />
           <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
           <Footer />
         </AuthProvider>
         <ServiceWorkerRegister />
+        <Analytics />
+        <ConsentBanner />
       </body>
     </html>
   );

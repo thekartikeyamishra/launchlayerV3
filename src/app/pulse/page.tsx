@@ -85,6 +85,30 @@ export default function PulsePage() {
             )}
           </section>
 
+          <section aria-labelledby="pulse-people">
+            <h2 id="pulse-people" className="font-display mb-4 text-lg font-bold">Most active requesters this week</h2>
+            {(() => {
+              const counts = new Map<string, number>();
+              for (const p of weekPosts) counts.set(p.authorName, (counts.get(p.authorName) ?? 0) + 1);
+              const top = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+              return top.length === 0 ? (
+                <p className="text-sm text-[var(--muted)]">Post a request this week and your name leads this list in Monday&apos;s Pulse.</p>
+              ) : (
+                <ol className="space-y-2">
+                  {top.map(([name, count], i) => (
+                    <li key={name} className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-white px-4 py-3 text-sm">
+                      <span className="flex items-center gap-3">
+                        <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--trust)]/10 text-xs font-bold text-[var(--trust-strong)] tabular-nums" aria-hidden="true">{i + 1}</span>
+                        <span className="font-medium">{name}</span>
+                      </span>
+                      <span className="tabular-nums text-[var(--muted)]">{count} request{count === 1 ? "" : "s"}</span>
+                    </li>
+                  ))}
+                </ol>
+              );
+            })()}
+          </section>
+
           <section aria-labelledby="pulse-categories">
             <h2 id="pulse-categories" className="font-display mb-4 text-lg font-bold">Categories with the most open demand</h2>
             {stats.length === 0 ? (

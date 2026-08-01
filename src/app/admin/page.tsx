@@ -10,18 +10,21 @@ import { useAuth } from "@/context/AuthContext";
 import {
   fetchOpenReports,
   fetchPendingCreatorRequests,
+  lookupUsers,
   removeDemandPost,
   resolveReport,
   setVerifiedCreator,
 } from "@/lib/db";
-import type { Report } from "@/lib/types";
-import { Button, EmptyState, ErrorNote, Skeleton } from "@/components/ui";
+import type { Report, UserProfile } from "@/lib/types";
+import { Button, EmptyState, ErrorNote, Skeleton, TextInput, VerifiedBadge } from "@/components/ui";
 
 export default function AdminPage() {
   const { user, admin, loading } = useAuth();
   const [reports, setReports] = useState<Report[] | null>(null);
   const [requests, setRequests] = useState<Array<{ uid: string; displayName: string }> | null>(null);
   const [error, setError] = useState("");
+  const [lookupTerm, setLookupTerm] = useState("");
+  const [lookupResults, setLookupResults] = useState<Array<{ uid: string; profile: UserProfile }> | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -161,6 +164,62 @@ export default function AdminPage() {
               </li>
             ))}
           </ul>
+        )}
+      </section>
+      <section aria-labelledby="lookup-heading">
+        <h2 id="lookup-heading" className="font-display text-lg font-bold">User lookup</h2>
+        <form
+          className="mt-3 flex max-w-md gap-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const term = lookupTerm.trim();
+            if (!term) return;
+            try {
+              setLookupResults(await lookupUsers(term));
+            } catch {
+              setError("Lookup failed. Try again.");
+            }
+          }}
+        >
+          <TextInput
+            aria-label="User ID or exact display name"
+            placeholder="UID or exact display name"
+            value={lookupTerm}
+            onChange={(e) => setLookupTerm(e.target.value)}
+          />
+          <Button type="submit">Search</Button>
+        </form>
+        {lookupResults !== null && (
+          lookupResults.length === 0 ? (
+            <p className="mt-3 text-sm text-[var(--muted)]">No user found for that UID or display name.</p>
+          ) : (
+            <ul className="mt-3 space-y-3">
+              {lookupResults.map(({ uid, profile }) => (
+                <li key={uid} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-white p-4 text-sm">
+                  <div>
+                    <p className="flex items-center gap-2 font-semibold">
+                      {profile.displayName || "Unnamed user"}
+                      {profile.verifiedCreator && <VerifiedBadge />}
+                    </p>
+                    <p className="text-xs text-[var(--muted)]">uid: {uid}</p>
+                  </div>
+                  <Button
+                    variant={profile.verifiedCreator ? "danger" : "secondary"}
+                    onClick={async () => {
+                      try {
+                        await setVerifiedCreator(uid, !profile.verifiedCreator);
+                        setLookupResults(await lookupUsers(lookupTerm.trim()));
+                      } catch {
+                        setError("Badge change failed. Try again.");
+                      }
+                    }}
+                  >
+                    {profile.verifiedCreator ? "Revoke badge" : "Grant Verified Creator"}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )
         )}
       </section>
     </div>

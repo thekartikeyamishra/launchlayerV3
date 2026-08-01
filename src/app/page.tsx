@@ -12,10 +12,12 @@ import DemandCard from "@/components/DemandCard";
 import { EmptyState, LinkButton, Skeleton } from "@/components/ui";
 import { logEvent } from "@/lib/analytics";
 import GettingStarted from "@/components/GettingStarted";
+import HeroAsk from "@/components/HeroAsk";
 
 export default function HomePage() {
   const [trending, setTrending] = useState<DemandPost[] | null>(null);
   const [gaps, setGaps] = useState<CategoryStat[] | null>(null);
+  const [totals, setTotals] = useState<{ posts: number; votes: number; claims: number } | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -28,6 +30,11 @@ export default function HomePage() {
         ]);
         setTrending(page.posts.slice(0, 5));
         setGaps(stats.filter((s) => s.demandPosts > 0).slice(0, 4));
+        setTotals({
+          posts: stats.reduce((n, s) => n + s.demandPosts, 0),
+          votes: stats.reduce((n, s) => n + s.totalVotes, 0),
+          claims: stats.reduce((n, s) => n + s.claims, 0),
+        });
       } catch {
         setError("Live demand couldn't be loaded. Refresh to try again.");
         setTrending([]);
@@ -51,10 +58,28 @@ export default function HomePage() {
           LaunchLayer is a public board of real demand for AI solutions. Buyers describe the
           problem; creators see genuine market signals before writing a line of code.
         </p>
-        <div className="anim-rise anim-d-3 mt-7 flex flex-wrap justify-center gap-3">
-          <LinkButton href="/demand/new">Post a demand request</LinkButton>
-          <LinkButton href="/opportunities" variant="secondary">Explore creator opportunities</LinkButton>
+        <div className="anim-rise anim-d-3">
+          <HeroAsk />
         </div>
+        <div className="anim-rise anim-d-4 mt-6 flex flex-wrap justify-center gap-3">
+          <LinkButton href="/demand" variant="secondary">Browse the board</LinkButton>
+          <LinkButton href="/opportunities" variant="secondary">Creator opportunities</LinkButton>
+        </div>
+        {totals !== null && (
+          <p className="anim-rise mt-6 text-sm text-[var(--muted)]">
+            {totals.posts >= 10 ? (
+              <>
+                <strong className="tabular-nums text-[var(--ink)]">{totals.posts}</strong> requests ·{" "}
+                <strong className="tabular-nums text-[var(--ink)]">{totals.votes}</strong> votes ·{" "}
+                <strong className="tabular-nums text-[var(--ink)]">{totals.claims}</strong> solutions — every number real, always
+              </>
+            ) : (
+              <>
+                Founding cohort open — early members shape what creators build first, and the board&apos;s history will show who was here.
+              </>
+            )}
+          </p>
+        )}
       </section>
 
       <GettingStarted />

@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
+import NotificationsBell from "./NotificationsBell";
 
 const NAV = [
   { href: "/demand", label: "Demand Board" },
@@ -49,6 +50,7 @@ export default function Header() {
         <div className="flex items-center gap-2">
           {loading ? null : user ? (
             <>
+              <NotificationsBell />
               <Link href="/account" className="rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)]">
                 Account
               </Link>

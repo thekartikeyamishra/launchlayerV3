@@ -25,6 +25,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import type {
+  AppNotification,
   CategoryStat,
   DemandClaim,
   DemandComment,
@@ -216,18 +217,24 @@ export async function fetchComments(postId: string): Promise<DemandComment[]> {
   });
 }
 
-export async function addComment(postId: string, uid: string, authorName: string, body: string): Promise<void> {
+export async function addComment(
+  post: { id: string; authorId: string; title: string },
+  uid: string,
+  authorName: string,
+  body: string,
+): Promise<void> {
   const database = db();
-  await addDoc(collection(database, "demandPosts", postId, "comments"), {
+  await addDoc(collection(database, "demandPosts", post.id, "comments"), {
     authorId: uid,
     authorName,
     body,
     createdAt: serverTimestamp(),
   });
-  await updateDoc(doc(database, "demandPosts", postId), {
+  await updateDoc(doc(database, "demandPosts", post.id), {
     commentCount: increment(1),
     updatedAt: serverTimestamp(),
   });
+  await notifyPostAuthor(post, uid, authorName, "comment");
 }
 
 // ---------- claims ----------
@@ -251,22 +258,122 @@ export async function fetchClaims(postId: string): Promise<DemandClaim[]> {
 }
 
 export async function addClaim(
-  postId: string,
+  post: { id: string; authorId: string; title: string },
   uid: string,
   creatorName: string,
   input: { title: string; description: string; listingUrl: string },
 ): Promise<void> {
   const database = db();
-  await addDoc(collection(database, "demandPosts", postId, "claims"), {
+  await addDoc(collection(database, "demandPosts", post.id, "claims"), {
     creatorId: uid,
     creatorName,
     ...input,
     createdAt: serverTimestamp(),
   });
-  await updateDoc(doc(database, "demandPosts", postId), {
+  await updateDoc(doc(database, "demandPosts", post.id), {
     claimCount: increment(1),
     updatedAt: serverTimestamp(),
   });
+  await notifyPostAuthor(post, uid, creatorName, "claim");
+}
+
+// ---------- in-app notifications ----------
+
+async function notifyPostAuthor(
+  post: { id: string; authorId: string; title: string },
+  actorUid: string,
+  actorName: string,
+  type: "claim" | "comment",
+): Promise<void> {
+  if (post.authorId === actorUid) return; // never notify yourself
+  try {
+    await addDoc(collection(db(), "users", post.authorId, "notifications"), {
+      type,
+      postId: post.id,
+      postTitle: post.title,
+      actorName,
+      read: false,
+      createdAt: serverTimestamp(),
+    });
+  } catch {
+    // A failed notification must never fail the action itself.
+  }
+}
+
+export async function fetchNotifications(uid: string): Promise<AppNotification[]> {
+  const snap = await getDocs(
+    query(collection(db(), "users", uid, "notifications"), orderBy("createdAt", "desc"), limit(20)),
+  );
+  return snap.docs.map((s) => {
+    const d = s.data();
+    return {
+      id: s.id,
+      type: (d.type ?? "comment") as AppNotification["type"],
+      postId: String(d.postId ?? ""),
+      postTitle: String(d.postTitle ?? ""),
+      actorName: String(d.actorName ?? ""),
+      read: Boolean(d.read),
+      createdAt: d.createdAt ?? null,
+    };
+  });
+}
+
+export async function countUnreadNotifications(uid: string): Promise<number> {
+  const snap = await getDocs(
+    query(collection(db(), "users", uid, "notifications"), where("read", "==", false), limit(100)),
+  );
+  return snap.size;
+}
+
+export async function markAllNotificationsRead(uid: string, notes: AppNotification[]): Promise<void> {
+  const database = db();
+  await Promise.all(
+    notes.filter((n) => !n.read).map((n) =>
+      updateDoc(doc(database, "users", uid, "notifications", n.id), { read: true }),
+    ),
+  );
+}
+
+// ---------- keyword search (v1: client-side over recent active posts) ----------
+
+export async function fetchPostsForSearch(): Promise<DemandPost[]> {
+  const snap = await getDocs(
+    query(collection(db(), "demandPosts"), where("status", "==", "active"), orderBy("createdAt", "desc"), limit(300)),
+  );
+  return snap.docs.map(postFromSnap);
+}
+
+export function searchPosts(posts: DemandPost[], rawQuery: string): DemandPost[] {
+  const tokens = rawQuery.toLowerCase().split(/\s+/).filter((t) => t.length >= 2);
+  if (tokens.length === 0) return [];
+  return posts
+    .map((p) => {
+      const haystack = `${p.title} ${p.description} ${p.tags.join(" ")} ${p.category}`.toLowerCase();
+      const hits = tokens.filter((t) => haystack.includes(t)).length;
+      return { p, score: hits / tokens.length };
+    })
+    .filter((r) => r.score >= 0.5)
+    .sort((a, b) => b.score - a.score || b.p.voteCount - a.p.voteCount)
+    .map((r) => r.p);
+}
+
+// ---------- admin: user lookup ----------
+
+export async function lookupUsers(term: string): Promise<Array<{ uid: string; profile: UserProfile }>> {
+  const results = new Map<string, UserProfile>();
+  const byId = await getUserProfile(term).catch(() => null);
+  if (byId) results.set(term, byId);
+  const snap = await getDocs(query(collection(db(), "users"), where("displayName", "==", term), limit(20)));
+  for (const s of snap.docs) {
+    const d = s.data();
+    results.set(s.id, {
+      displayName: String(d.displayName ?? ""),
+      verifiedCreator: Boolean(d.verifiedCreator),
+      verifiedCreatorRequest: (d.verifiedCreatorRequest ?? "none") as UserProfile["verifiedCreatorRequest"],
+      createdAt: d.createdAt ?? null,
+    });
+  }
+  return Array.from(results.entries()).map(([uid, profile]) => ({ uid, profile }));
 }
 
 // ---------- reports ----------

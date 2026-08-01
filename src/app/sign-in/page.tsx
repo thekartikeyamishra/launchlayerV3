@@ -3,8 +3,8 @@
 
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -37,8 +37,12 @@ function authMessage(err: unknown): string {
   return "Sign-in failed. Try again.";
 }
 
-export default function SignInPage() {
+function SignInForm() {
   const router = useRouter();
+  const params = useSearchParams();
+  const rawNext = params.get("next") ?? "/demand";
+  // Only allow same-site relative redirects — never absolute URLs.
+  const nextPath = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/demand";
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -62,11 +66,11 @@ export default function SignInPage() {
         await sendEmailVerification(cred.user);
         logEvent("auth.signed_up.v1");
         setNotice("Account created. A verification link is on its way to your inbox.");
-        router.push("/demand");
+        router.push(nextPath);
       } else {
         await signInWithEmailAndPassword(auth(), parsed.data.email, parsed.data.password);
         logEvent("auth.signed_in.v1", { method: "password" });
-        router.push("/demand");
+        router.push(nextPath);
       }
     } catch (err) {
       setError(authMessage(err));
@@ -80,7 +84,7 @@ export default function SignInPage() {
     try {
       await signInWithPopup(auth(), new GoogleAuthProvider());
       logEvent("auth.signed_in.v1", { method: "google" });
-      router.push("/demand");
+      router.push(nextPath);
     } catch (err) {
       setError(authMessage(err));
       setBusy(false);
@@ -143,5 +147,13 @@ export default function SignInPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignInForm />
+    </Suspense>
   );
 }

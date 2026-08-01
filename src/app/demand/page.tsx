@@ -3,13 +3,13 @@
 
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { fetchDemandPosts, type PostPage } from "@/lib/db";
+import { fetchDemandPosts, fetchPostsForSearch, searchPosts, type PostPage } from "@/lib/db";
 import type { DemandPost } from "@/lib/types";
 import { CATEGORIES } from "@/lib/categories";
 import DemandCard from "@/components/DemandCard";
-import { Button, EmptyState, LinkButton, Select, Skeleton } from "@/components/ui";
+import { Button, EmptyState, LinkButton, Select, Skeleton, TextInput } from "@/components/ui";
 import { logEvent } from "@/lib/analytics";
 import type { DocumentSnapshot } from "firebase/firestore";
 
@@ -24,6 +24,10 @@ function Board() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<DemandPost[] | null>(null);
+  const searchPool = useRef<DemandPost[] | null>(null);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     setPosts(null);
@@ -44,6 +48,21 @@ function Board() {
     void load();
   }, [load, category, sort]);
 
+  useEffect(() => {
+    if (debounce.current) clearTimeout(debounce.current);
+    const term = searchTerm.trim();
+    if (term.length < 2) { setSearchResults(null); return; }
+    debounce.current = setTimeout(async () => {
+      try {
+        if (!searchPool.current) searchPool.current = await fetchPostsForSearch();
+        setSearchResults(searchPosts(searchPool.current, term));
+      } catch {
+        setSearchResults([]);
+      }
+    }, 300);
+    return () => { if (debounce.current) clearTimeout(debounce.current); };
+  }, [searchTerm]);
+
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params.toString());
     if (value) next.set(key, value);
@@ -62,6 +81,16 @@ function Board() {
       </div>
 
       <div className="flex flex-wrap gap-3">
+        <div className="w-full sm:w-72">
+          <label htmlFor="board-search" className="sr-only">Search demand posts</label>
+          <TextInput
+            id="board-search"
+            type="search"
+            placeholder="Search requests… (e.g. invoice, whatsapp)"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
         <div className="w-56">
           <label htmlFor="filter-category" className="sr-only">Filter by category</label>
           <Select id="filter-category" value={category} onChange={(e) => setParam("category", e.target.value)}>
@@ -82,7 +111,24 @@ function Board() {
 
       {error && <p className="text-sm text-red-700">{error}</p>}
 
-      {posts === null ? (
+      {searchResults !== null ? (
+        searchResults.length === 0 ? (
+          <EmptyState
+            title={`No requests match “${searchTerm.trim()}”`}
+            body="That gap is a signal in itself. Post the request — creators watching the board will see it."
+            action={<LinkButton href="/demand/new">Post this request</LinkButton>}
+          />
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--muted)]">
+              {searchResults.length} result{searchResults.length === 1 ? "" : "s"} for “{searchTerm.trim()}”
+            </p>
+            {searchResults.map((p) => (
+              <DemandCard key={p.id} post={p} />
+            ))}
+          </div>
+        )
+      ) : posts === null ? (
         <div className="space-y-3">
           <Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" />
         </div>

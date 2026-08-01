@@ -1,7 +1,10 @@
 // File: src/components/Footer.tsx
 // Purpose: Global footer with legal links and the platform's trust commitment.
 
+"use client";
+
 import Link from "next/link";
+import { clearConsent } from "./ConsentBanner";
 
 export default function Footer() {
   return (
@@ -24,6 +27,7 @@ export default function Footer() {
             <Link href="/legal/terms" className="text-[var(--muted)] hover:text-[var(--ink)]">Terms of Service</Link>
             <Link href="/legal/privacy" className="text-[var(--muted)] hover:text-[var(--ink)]">Privacy Policy</Link>
             <Link href="/legal/acceptable-use" className="text-[var(--muted)] hover:text-[var(--ink)]">Acceptable Use Policy</Link>
+            <button onClick={clearConsent} className="text-left text-[var(--muted)] hover:text-[var(--ink)]">Analytics preferences</button>
           </nav>
         </div>
         <p className="mt-8 text-xs text-[var(--muted)]">

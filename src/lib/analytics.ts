@@ -11,6 +11,8 @@ type EventName =
   | "demand_post.voted.v1"
   | "demand_post.unvoted.v1"
   | "demand_post.followed.v1"
+  | "demand_post.shared.v1"
+  | "hero.searched.v1"
   | "demand_post.unfollowed.v1"
   | "demand_comment.created.v1"
   | "demand_claim.created.v1"

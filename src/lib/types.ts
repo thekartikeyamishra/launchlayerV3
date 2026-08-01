@@ -69,3 +69,13 @@ export interface CategoryStat {
   claims: number;
   gapScore: number;
 }
+
+export interface AppNotification {
+  id: string;
+  type: "claim" | "comment";
+  postId: string;
+  postTitle: string;
+  actorName: string;
+  read: boolean;
+  createdAt: Timestamp | null;
+}
