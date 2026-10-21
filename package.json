@@ -1,17 +1,23 @@
 {
   "name": "launchlayer",
-  "version": "0.1.0",
-  "packageManager": "pnpm@9.15.4",
+  "version": "0.6.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "typecheck": "tsc --noEmit",
+    "check:links": "node scripts/check-links.mjs",
+    "check:mcp": "node scripts/check-mcp.mjs",
+    "licenses": "npx --yes license-checker-rseidelsohn --production --excludePrivatePackages --summary",
+    "backup": "gcloud firestore export gs://%FIREBASE_BACKUP_BUCKET%/launchlayer",
+    "admin:create": "node scripts/create-admin.mjs",
+    "telegram:setup": "node scripts/telegram-setup.mjs",
+    "prebuild": "node -e \"require('fs').rmSync('.next/dev',{recursive:true,force:true})\""
   },
   "dependencies": {
     "firebase": "^12.16.0",
-    "next": "16.2.12",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "^3.25.76"
@@ -21,7 +27,21 @@
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "firebase-admin": "^14.4.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "license": "UNLICENSED",
+  "author": "Kartikeya Mishra <workmailkartikeya@gmail.com>",
+  "homepage": "https://launchlayer.me",
+  "overrides": {
+    "sharp": "0.35.5",
+    "postcss": "8.5.28",
+    "nanoid": "3.3.20",
+    "source-map-js": "1.2.2",
+    "@grpc/grpc-js": "1.14.5"
   }
 }

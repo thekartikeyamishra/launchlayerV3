@@ -19,7 +19,14 @@ type EventName =
   | "content.reported.v1"
   | "auth.signed_up.v1"
   | "auth.signed_in.v1"
-  | "verified_creator.requested.v1";
+  | "verified_creator.requested.v1"
+  | "tool.saved.v1"
+  | "tool.unsaved.v1"
+  | "tool.visited.v1"
+  | "tool.reviewed.v1"
+  | "tool.submitted.v1"
+  | "tool.reported.v1"
+  | "pwa.install_clicked.v1";
 
 declare global {
   interface Window {
@@ -32,6 +39,9 @@ export function logEvent(name: EventName, props: Record<string, string | number 
     if (typeof window !== "undefined" && window.gtag) {
       window.gtag("event", name, props);
     }
+    // Page views go to GA only. Writing one Firestore doc per page view is the fastest way to
+    // grow the database bill with no product value; we keep first-party events for actions.
+    if (name === "page.viewed.v1") return;
     void addDoc(collection(db(), "events"), {
       name,
       props,

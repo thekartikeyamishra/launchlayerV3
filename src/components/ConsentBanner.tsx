@@ -53,13 +53,15 @@ export default function ConsentBanner() {
   return (
     <div
       role="region"
-      aria-label="Analytics consent"
+      aria-label="Cookie consent"
       className="anim-rise fixed inset-x-0 bottom-0 z-50 border-t border-[var(--line)] bg-white p-4 shadow-[0_-4px_20px_-8px_rgba(20,33,61,0.15)]"
     >
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
         <p className="max-w-xl text-sm text-[var(--muted)]">
-          We use Google Analytics to understand aggregate usage and improve LaunchLayer — never to
-          sell your data. Essential functionality works either way.{" "}
+          We use Google Analytics to understand aggregate usage, and Google AdSense to show
+          clearly-labelled ads that keep the directory free. &ldquo;Allow&rdquo; enables
+          personalised ads and analytics; &ldquo;Decline&rdquo; keeps analytics off and ads
+          non-personalised. We never sell your data.{" "}
           <Link href="/legal/privacy" className="underline">Privacy Policy</Link>
         </p>
         <div className="flex gap-2">
@@ -73,7 +75,7 @@ export default function ConsentBanner() {
             onClick={() => setConsent("granted")}
             className="press rounded-lg bg-[var(--trust)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--trust-strong)]"
           >
-            Allow analytics
+            Allow
           </button>
         </div>
       </div>

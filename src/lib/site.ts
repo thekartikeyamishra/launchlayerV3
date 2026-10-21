@@ -2,7 +2,12 @@
 // Purpose: Canonical site URL + server-side public reads over the Firestore REST API
 // (used by sitemap and per-post metadata; reads are public per firestore.rules).
 
-export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://launchlayer.example.com").replace(/\/$/, "");
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://launchlayer.me").replace(/\/$/, "");
+export const SITE_NAME = "LaunchLayer";
+/** The legal operator of the service. Change to your company name once incorporated. */
+export const LEGAL_ENTITY = process.env.NEXT_PUBLIC_LEGAL_ENTITY || "Kartikeya Mishra (sole proprietor), India";
+export const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL || "support@launchlayer.me";
+export const SITE_TAGLINE = "Find the right AI tool for the job — or post the one that doesn't exist yet.";
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 const API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;

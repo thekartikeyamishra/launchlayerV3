@@ -15,6 +15,11 @@ import { logEvent } from "@/lib/analytics";
 import { markMission, setJustPosted } from "@/lib/missions";
 import { Button, ErrorNote, Field, Select, TextArea, TextInput } from "@/components/ui";
 import type { DemandPost } from "@/lib/types";
+import { useDraft } from "@/lib/useDraft";
+import DraftNotice from "@/components/DraftNotice";
+
+type DemandForm = { title: string; description: string; category: string; budgetBand: string; urgency: string; tags: string };
+const demandEmpty = (v: DemandForm) => !v.title.trim() && !v.description.trim() && !v.tags.trim();
 
 export default function NewDemandPage() {
   const { user, loading } = useAuth();
@@ -42,6 +47,8 @@ export default function NewDemandPage() {
       // no-op
     }
   }, []);
+  // Autosave: people who leave halfway get their request back when they return.
+  const draft = useDraft<DemandForm>("demand", form, (v) => setForm((f) => ({ ...v, title: f.title || v.title })), demandEmpty);
   const searchPool = useRef<DemandPost[] | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -128,6 +135,7 @@ export default function NewDemandPage() {
       logEvent("demand_post.created.v1", { category: parsed.data.category, urgency: parsed.data.urgency });
       markMission("posted");
       setJustPosted();
+      draft.clear();
       router.push(`/demand/${id}`);
     } catch {
       setError("Your request couldn't be posted. Check your connection and try again — nothing was saved.");
@@ -141,6 +149,17 @@ export default function NewDemandPage() {
       <p className="mt-1 text-sm text-[var(--muted)]">
         Describe the AI solution you need. Creators watching this board build from real requests like yours.
       </p>
+      {draft.restored && (
+        <div className="mt-4">
+          <DraftNotice
+            onKeep={draft.dismiss}
+            onDiscard={() => {
+              draft.clear();
+              setForm({ title: "", description: "", category: "", budgetBand: "unspecified", urgency: "exploring", tags: "" });
+            }}
+          />
+        </div>
+      )}
       <form onSubmit={submit} className="mt-6 space-y-5">
         <Field label="What do you need?" htmlFor="title" error={fieldErrors.title} hint="One clear sentence, e.g. “An AI agent that reads invoices in German and exports to Tally.”">
           <TextInput id="title" value={form.title} maxLength={120} onChange={(e) => setForm({ ...form, title: e.target.value })} />

@@ -1,40 +1,50 @@
 // File: src/app/sitemap.ts
-// Purpose: sitemap.xml — static routes, category board views, and every active demand post.
+// Purpose: sitemap.xml — canonical, indexable URLs only (no query-string variants).
 // Regenerates hourly; falls back to static routes if Firestore is unreachable.
 
 import type { MetadataRoute } from "next";
-import { SITE_URL } from "@/lib/site";
-import { fetchRecentPostMetas } from "@/lib/site";
-import { CATEGORIES } from "@/lib/categories";
+import { SITE_URL, fetchRecentPostMetas } from "@/lib/site";
+import { getAllTools, TASKS, TOOL_CATEGORIES } from "@/lib/directory";
+import { COMPARISONS, pairSlug } from "@/lib/comparisons-data";
 
 export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
+  const r = (path: string, priority: number, changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"], lastModified: Date = now) => ({
+    url: `${SITE_URL}${path}`,
+    lastModified,
+    changeFrequency,
+    priority,
+  });
+
   const staticRoutes: MetadataRoute.Sitemap = [
-    { url: `${SITE_URL}/`, lastModified: now, changeFrequency: "daily", priority: 1 },
-    { url: `${SITE_URL}/demand`, lastModified: now, changeFrequency: "hourly", priority: 0.9 },
-    { url: `${SITE_URL}/opportunities`, lastModified: now, changeFrequency: "daily", priority: 0.8 },
-    { url: `${SITE_URL}/pulse`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
-    { url: `${SITE_URL}/legal/terms`, lastModified: now, changeFrequency: "yearly", priority: 0.2 },
-    { url: `${SITE_URL}/legal/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.2 },
-    { url: `${SITE_URL}/legal/acceptable-use`, lastModified: now, changeFrequency: "yearly", priority: 0.2 },
+    r("/", 1, "daily"),
+    r("/tools", 0.9, "daily"),
+    r("/tasks", 0.9, "weekly"),
+    r("/compare", 0.7, "weekly"),
+    r("/demand", 0.8, "hourly"),
+    r("/opportunities", 0.6, "daily"),
+    r("/pulse", 0.5, "weekly"),
+    r("/submit", 0.5, "monthly"),
+    r("/developers", 0.5, "monthly"),
+    r("/editorial-policy", 0.4, "monthly"),
+    r("/about", 0.4, "monthly"),
+    r("/contact", 0.3, "yearly"),
+    r("/legal/terms", 0.2, "yearly"),
+    r("/legal/privacy", 0.2, "yearly"),
+    r("/legal/refund", 0.2, "yearly"),
+    r("/legal/acceptable-use", 0.2, "yearly"),
   ];
 
-  const categoryRoutes: MetadataRoute.Sitemap = CATEGORIES.map((c) => ({
-    url: `${SITE_URL}/demand?category=${encodeURIComponent(c)}`,
-    lastModified: now,
-    changeFrequency: "daily",
-    priority: 0.6,
-  }));
+  const [tools, posts] = await Promise.all([getAllTools(), fetchRecentPostMetas(500)]);
 
-  const posts = await fetchRecentPostMetas(500);
-  const postRoutes: MetadataRoute.Sitemap = posts.map((p) => ({
-    url: `${SITE_URL}/demand/${p.id}`,
-    lastModified: p.updatedAt ? new Date(p.updatedAt) : now,
-    changeFrequency: "daily",
-    priority: 0.8,
-  }));
-
-  return [...staticRoutes, ...categoryRoutes, ...postRoutes];
+  return [
+    ...staticRoutes,
+    ...TASKS.map((t) => r(`/tasks/${t.slug}`, 0.8, "weekly")),
+    ...COMPARISONS.map((c) => r(`/compare/${pairSlug(c)}`, 0.8, "monthly")),
+    ...TOOL_CATEGORIES.map((c) => r(`/categories/${c.slug}`, 0.7, "weekly")),
+    ...tools.map((t) => r(`/tools/${t.slug}`, 0.8, "weekly", new Date(`${t.reviewedAt}T00:00:00Z`))),
+    ...posts.map((p) => r(`/demand/${p.id}`, 0.6, "daily", p.updatedAt ? new Date(p.updatedAt) : now)),
+  ];
 }

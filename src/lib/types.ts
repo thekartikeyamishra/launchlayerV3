@@ -53,7 +53,7 @@ export interface DemandClaim {
 
 export interface Report {
   id: string;
-  targetType: "demandPost" | "comment" | "claim";
+  targetType: "demandPost" | "comment" | "claim" | "tool";
   targetPath: string;
   targetLabel: string;
   reason: string;
@@ -77,5 +77,39 @@ export interface AppNotification {
   postTitle: string;
   actorName: string;
   read: boolean;
+  createdAt: Timestamp | null;
+}
+
+export interface ToolReview {
+  id: string;
+  toolSlug: string;
+  authorId: string;
+  authorName: string;
+  rating: number;
+  usedFor: string;
+  pros: string;
+  cons: string;
+  createdAt: Timestamp | null;
+}
+
+export interface SavedTool {
+  slug: string;
+  name: string;
+  note: string;
+  createdAt: Timestamp | null;
+}
+
+export interface ToolSubmission {
+  id: string;
+  submitterId: string;
+  submitterName: string;
+  name: string;
+  url: string;
+  tagline: string;
+  description: string;
+  category: string;
+  pricing: string;
+  isMaker: boolean;
+  status: "pending" | "approved" | "rejected";
   createdAt: Timestamp | null;
 }

@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { deleteUser, sendEmailVerification } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
 import { useAuth } from "@/context/AuthContext";
-import { deleteOwnUserDoc, fetchMyPosts, requestVerifiedCreator } from "@/lib/db";
+import { deleteMyPersonalData, getSuspension, type Suspension, fetchMyPosts, fetchMyReviews, fetchSavedTools, requestVerifiedCreator } from "@/lib/db";
 import type { DemandPost } from "@/lib/types";
 import { logEvent } from "@/lib/analytics";
 import DemandCard from "@/components/DemandCard";
@@ -22,6 +22,11 @@ export default function AccountPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [suspension, setSuspension] = useState<Suspension | null>(null);
+
+  useEffect(() => {
+    if (user) void getSuspension(user.uid).then(setSuspension);
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -43,12 +48,18 @@ export default function AccountPage() {
     );
   }
 
-  const exportData = () => {
+  const exportData = async () => {
+    const [savedTools, reviews] = await Promise.all([
+      fetchSavedTools(user.uid).catch(() => []),
+      fetchMyReviews(user.uid).catch(() => []),
+    ]);
     const payload = {
       exportedAt: new Date().toISOString(),
       account: { uid: user.uid, email: user.email, displayName: user.displayName, emailVerified: user.emailVerified },
       profile,
       demandPosts: myPosts ?? [],
+      savedTools,
+      toolReviews: reviews,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -76,13 +87,13 @@ export default function AccountPage() {
 
   const removeAccount = async () => {
     const confirmed = window.confirm(
-      "Delete your LaunchLayer account? Your profile is removed permanently. Your demand posts remain on the board under your display name unless you delete them first or request removal.",
+      "Delete your LaunchLayer account? Your profile, saved tools, notes and reviews are removed permanently. Your demand posts remain on the board under your display name unless you delete them first or request removal.",
     );
     if (!confirmed) return;
     setBusy(true);
     setError("");
     try {
-      await deleteOwnUserDoc(user.uid);
+      await deleteMyPersonalData(user.uid);
       await deleteUser(user);
       router.push("/");
     } catch (err) {
@@ -97,6 +108,13 @@ export default function AccountPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-10">
+      {suspension && (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <p className="font-semibold">Your account can&apos;t post, review or submit right now.</p>
+          <p className="mt-1">Reason: {suspension.reason}</p>
+          <p className="mt-1">You can still browse, export and delete your data. To appeal, <Link href="/contact" className="underline">contact us</Link> with your account email.</p>
+        </div>
+      )}
       <section>
         <h1 className="font-display text-2xl font-bold">Account</h1>
         <div className="mt-4 rounded-xl border border-[var(--line)] bg-white p-5">
@@ -170,7 +188,7 @@ export default function AccountPage() {
       <section aria-labelledby="privacy-heading">
         <h2 id="privacy-heading" className="font-display text-lg font-bold">Your data</h2>
         <div className="mt-3 flex flex-wrap gap-3">
-          <Button variant="secondary" onClick={exportData}>Download my data (JSON)</Button>
+          <Button variant="secondary" onClick={() => void exportData()}>Download my data (JSON)</Button>
           <Button variant="danger" onClick={removeAccount} disabled={busy}>Delete my account</Button>
         </div>
         <p className="mt-2 text-xs text-[var(--muted)]">

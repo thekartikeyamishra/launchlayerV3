@@ -9,6 +9,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getCountFromServer,
   getDocs,
   increment,
   limit,
@@ -18,6 +19,7 @@ import {
   serverTimestamp,
   setDoc,
   startAfter,
+  Timestamp,
   updateDoc,
   where,
   type DocumentSnapshot,
@@ -31,10 +33,13 @@ import type {
   DemandComment,
   DemandPost,
   Report,
+  SavedTool,
+  ToolReview,
+  ToolSubmission,
   UserProfile,
 } from "./types";
-import type { DemandPostInput } from "./schemas";
-import { CATEGORIES } from "./categories";
+import { asRole, type StaffRole } from "./roles";
+import type { DemandPostInput, ToolReviewInput, ToolSubmissionInput } from "./schemas";
 
 const PAGE_SIZE = 20;
 
@@ -318,11 +323,12 @@ export async function fetchNotifications(uid: string): Promise<AppNotification[]
   });
 }
 
+/** Count aggregate: billed as 1 read per 1,000 matches instead of 1 read per document. */
 export async function countUnreadNotifications(uid: string): Promise<number> {
-  const snap = await getDocs(
-    query(collection(db(), "users", uid, "notifications"), where("read", "==", false), limit(100)),
+  const snap = await getCountFromServer(
+    query(collection(db(), "users", uid, "notifications"), where("read", "==", false)),
   );
-  return snap.size;
+  return snap.data().count;
 }
 
 export async function markAllNotificationsRead(uid: string, notes: AppNotification[]): Promise<void> {
@@ -336,11 +342,13 @@ export async function markAllNotificationsRead(uid: string, notes: AppNotificati
 
 // ---------- keyword search (v1: client-side over recent active posts) ----------
 
+/** Recent active posts for keyword search — served from a CDN-cached API, not per-visitor reads. */
 export async function fetchPostsForSearch(): Promise<DemandPost[]> {
-  const snap = await getDocs(
-    query(collection(db(), "demandPosts"), where("status", "==", "active"), orderBy("createdAt", "desc"), limit(300)),
-  );
-  return snap.docs.map(postFromSnap);
+  const res = await fetch("/api/v1/demand/pool");
+  if (!res.ok) throw new Error("pool unavailable");
+  const { posts } = (await res.json()) as { posts: Array<Omit<DemandPost, "createdAt" | "updatedAt"> & { createdAt: unknown; updatedAt: unknown }> };
+  // Only .seconds is read from these timestamps in the UI (DemandCard), so the plain shape is safe.
+  return posts.map((p) => ({ ...p, createdAt: p.createdAt as DemandPost["createdAt"], updatedAt: p.updatedAt as DemandPost["updatedAt"] }) as DemandPost);
 }
 
 export function searchPosts(posts: DemandPost[], rawQuery: string): DemandPost[] {
@@ -398,27 +406,11 @@ export async function reportContent(
 
 // ---------- opportunity stats (client-side aggregation, v1 scale) ----------
 
+/** Category demand/supply stats — served from a CDN-cached API (one read per 15 min, not per visitor). */
 export async function fetchCategoryStats(): Promise<CategoryStat[]> {
-  const snap = await getDocs(
-    query(collection(db(), "demandPosts"), where("status", "==", "active"), limit(1000)),
-  );
-  const byCategory = new Map<string, CategoryStat>();
-  for (const c of CATEGORIES) {
-    byCategory.set(c, { category: c, demandPosts: 0, totalVotes: 0, claims: 0, gapScore: 0 });
-  }
-  for (const s of snap.docs) {
-    const p = postFromSnap(s);
-    const stat = byCategory.get(p.category);
-    if (!stat) continue;
-    stat.demandPosts += 1;
-    stat.totalVotes += p.voteCount;
-    stat.claims += p.claimCount;
-  }
-  const stats = Array.from(byCategory.values());
-  for (const s of stats) {
-    s.gapScore = s.demandPosts === 0 ? 0 : (s.demandPosts + s.totalVotes) / (s.claims + 1);
-  }
-  return stats.sort((a, b) => b.gapScore - a.gapScore);
+  const res = await fetch("/api/v1/demand/stats");
+  if (!res.ok) throw new Error("stats unavailable");
+  return ((await res.json()) as { stats: CategoryStat[] }).stats;
 }
 
 // ---------- admin ----------
@@ -466,4 +458,323 @@ export async function fetchPendingCreatorRequests(): Promise<Array<{ uid: string
 
 export async function deleteOwnUserDoc(uid: string): Promise<void> {
   await deleteDoc(doc(db(), "users", uid));
+}
+
+// ---------- AI tools directory: saves (personal library), reviews, submissions ----------
+
+export async function isToolSaved(uid: string, slug: string): Promise<boolean> {
+  const snap = await getDoc(doc(db(), "users", uid, "savedTools", slug));
+  return snap.exists();
+}
+
+/** Toggles a save and keeps the public save counter in step (transaction). Returns new state. */
+export async function toggleToolSave(uid: string, tool: { slug: string; name: string }): Promise<boolean> {
+  const database = db();
+  const savedRef = doc(database, "users", uid, "savedTools", tool.slug);
+  const statsRef = doc(database, "toolStats", tool.slug);
+  return runTransaction(database, async (tx) => {
+    const [saved, stats] = await Promise.all([tx.get(savedRef), tx.get(statsRef)]);
+    const current = stats.exists() ? Number(stats.data().saveCount ?? 0) : 0;
+    if (saved.exists()) {
+      tx.delete(savedRef);
+      if (stats.exists() && current > 0) tx.update(statsRef, { saveCount: current - 1 });
+      return false;
+    }
+    tx.set(savedRef, { slug: tool.slug, name: tool.name, note: "", createdAt: serverTimestamp() });
+    if (stats.exists()) tx.update(statsRef, { saveCount: current + 1 });
+    else tx.set(statsRef, { saveCount: 1 });
+    return true;
+  });
+}
+
+export async function fetchToolSaveCount(slug: string): Promise<number> {
+  const snap = await getDoc(doc(db(), "toolStats", slug));
+  return snap.exists() ? Number(snap.data().saveCount ?? 0) : 0;
+}
+
+export async function fetchSavedTools(uid: string): Promise<SavedTool[]> {
+  const snap = await getDocs(
+    query(collection(db(), "users", uid, "savedTools"), orderBy("createdAt", "desc"), limit(200)),
+  );
+  return snap.docs.map((s) => {
+    const d = s.data();
+    return {
+      slug: s.id,
+      name: String(d.name ?? s.id),
+      note: String(d.note ?? ""),
+      createdAt: d.createdAt ?? null,
+    };
+  });
+}
+
+export async function updateSavedToolNote(uid: string, slug: string, note: string): Promise<void> {
+  await updateDoc(doc(db(), "users", uid, "savedTools", slug), { note: note.slice(0, 500) });
+}
+
+export async function fetchToolReviews(slug: string): Promise<ToolReview[]> {
+  const snap = await getDocs(
+    query(collection(db(), "toolReviews"), where("toolSlug", "==", slug), orderBy("createdAt", "desc"), limit(100)),
+  );
+  return snap.docs.map((s) => {
+    const d = s.data();
+    return {
+      id: s.id,
+      toolSlug: String(d.toolSlug ?? ""),
+      authorId: String(d.authorId ?? ""),
+      authorName: String(d.authorName ?? ""),
+      rating: Number(d.rating ?? 0),
+      usedFor: String(d.usedFor ?? ""),
+      pros: String(d.pros ?? ""),
+      cons: String(d.cons ?? ""),
+      createdAt: d.createdAt ?? null,
+    };
+  });
+}
+
+/** One review per person per tool — the document id enforces it (see firestore.rules). */
+export async function upsertToolReview(
+  slug: string,
+  uid: string,
+  authorName: string,
+  input: ToolReviewInput,
+): Promise<void> {
+  const ref = doc(db(), "toolReviews", `${slug}__${uid}`);
+  const existing = await getDoc(ref);
+  await setDoc(ref, {
+    toolSlug: slug,
+    authorId: uid,
+    authorName,
+    ...input,
+    createdAt: existing.exists() ? (existing.data().createdAt ?? serverTimestamp()) : serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function submitTool(uid: string, name: string, input: ToolSubmissionInput): Promise<void> {
+  await addDoc(collection(db(), "toolSubmissions"), {
+    ...input,
+    submitterId: uid,
+    submitterName: name,
+    status: "pending",
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function fetchPendingSubmissions(): Promise<ToolSubmission[]> {
+  const snap = await getDocs(
+    query(collection(db(), "toolSubmissions"), where("status", "==", "pending"), orderBy("createdAt", "asc"), limit(100)),
+  );
+  return snap.docs.map((s) => {
+    const d = s.data();
+    return {
+      id: s.id,
+      submitterId: String(d.submitterId ?? ""),
+      submitterName: String(d.submitterName ?? ""),
+      name: String(d.name ?? ""),
+      url: String(d.url ?? ""),
+      tagline: String(d.tagline ?? ""),
+      description: String(d.description ?? ""),
+      category: String(d.category ?? ""),
+      pricing: String(d.pricing ?? ""),
+      isMaker: Boolean(d.isMaker),
+      status: (d.status ?? "pending") as ToolSubmission["status"],
+      createdAt: d.createdAt ?? null,
+    };
+  });
+}
+
+export function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+/** Admin: publish a submission as a live community listing. */
+export async function approveSubmission(sub: ToolSubmission): Promise<string> {
+  const slug = slugify(sub.name) || sub.id;
+  const database = db();
+  await setDoc(doc(database, "tools", slug), {
+    name: sub.name,
+    url: sub.url,
+    maker: sub.isMaker ? sub.submitterName : "",
+    tagline: sub.tagline,
+    description: sub.description,
+    category: sub.category,
+    pricing: sub.pricing,
+    tasks: [],
+    api: false,
+    openSource: false,
+    platforms: ["Web"],
+    pros: [],
+    cons: [],
+    bestFor: "",
+    reviewedAt: new Date().toISOString().slice(0, 10),
+    submissionId: sub.id,
+  });
+  await updateDoc(doc(database, "toolSubmissions", sub.id), { status: "approved", slug });
+  return slug;
+}
+
+export async function rejectSubmission(id: string): Promise<void> {
+  await updateDoc(doc(db(), "toolSubmissions", id), { status: "rejected" });
+}
+
+// ---------- personal data: export + erasure (DPDP Act 2023 / GDPR) ----------
+
+export async function fetchMyReviews(uid: string): Promise<ToolReview[]> {
+  const snap = await getDocs(query(collection(db(), "toolReviews"), where("authorId", "==", uid), limit(500)));
+  return snap.docs.map((s) => {
+    const d = s.data();
+    return {
+      id: s.id,
+      toolSlug: String(d.toolSlug ?? ""),
+      authorId: String(d.authorId ?? ""),
+      authorName: String(d.authorName ?? ""),
+      rating: Number(d.rating ?? 0),
+      usedFor: String(d.usedFor ?? ""),
+      pros: String(d.pros ?? ""),
+      cons: String(d.cons ?? ""),
+      createdAt: d.createdAt ?? null,
+    };
+  });
+}
+
+/** Removes everything personal we can remove client-side: library, notes, notifications, reviews, profile. */
+export async function deleteMyPersonalData(uid: string): Promise<void> {
+  const database = db();
+  const [saved, notes, reviews] = await Promise.all([
+    getDocs(query(collection(database, "users", uid, "savedTools"), limit(500))),
+    getDocs(query(collection(database, "users", uid, "notifications"), limit(500))),
+    getDocs(query(collection(database, "toolReviews"), where("authorId", "==", uid), limit(500))),
+  ]);
+  await Promise.all([
+    ...saved.docs.map((d) => deleteDoc(d.ref)),
+    ...notes.docs.map((d) => deleteDoc(d.ref)),
+    ...reviews.docs.map((d) => deleteDoc(d.ref)),
+  ]);
+  await deleteDoc(doc(database, "users", uid));
+}
+
+// ---------- staff (admin panel) ----------
+
+export async function fetchStaffRole(uid: string): Promise<StaffRole | null> {
+  try {
+    const snap = await getDoc(doc(db(), "admins", uid));
+    return snap.exists() ? asRole(snap.data().role) : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface StaffMember {
+  uid: string;
+  role: StaffRole;
+  username: string;
+  email: string;
+}
+
+export async function fetchTeam(): Promise<StaffMember[]> {
+  const snap = await getDocs(query(collection(db(), "admins"), limit(100)));
+  return snap.docs
+    .map((s) => {
+      const d = s.data();
+      const role = asRole(d.role);
+      return role ? { uid: s.id, role, username: String(d.username ?? ""), email: String(d.email ?? "") } : null;
+    })
+    .filter((m): m is StaffMember => m !== null);
+}
+
+export async function setStaffRole(uid: string, role: StaffRole, username: string, email: string): Promise<void> {
+  await setDoc(doc(db(), "admins", uid), { role, username, email, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+export async function removeStaff(uid: string): Promise<void> {
+  await deleteDoc(doc(db(), "admins", uid));
+}
+
+export interface HealthCounts {
+  users: number;
+  users7d: number;
+  activePosts: number;
+  reviews: number;
+  communityTools: number;
+  pendingSubmissions: number | null;
+  openReports: number | null;
+  events7d: number;
+  signupsByDay: Array<{ day: string; count: number }>;
+}
+
+/** Aggregation (count) queries: ~1 billed read per 1,000 matched entries — cheap at any scale. */
+export async function fetchHealthCounts(canModerate: boolean, canEdit: boolean): Promise<HealthCounts> {
+  const database = db();
+  const now = Date.now();
+  const since = (days: number) => Timestamp.fromMillis(now - days * 86400_000);
+  const c = async (q: Parameters<typeof getCountFromServer>[0]) => {
+    try {
+      return (await getCountFromServer(q)).data().count;
+    } catch {
+      return 0;
+    }
+  };
+  const days = Array.from({ length: 14 }, (_, i) => 13 - i);
+  const [users, users7d, activePosts, reviews, communityTools, pendingSubmissions, openReports, events7d, ...signups] = await Promise.all([
+    c(collection(database, "users")),
+    c(query(collection(database, "users"), where("createdAt", ">=", since(7)))),
+    c(query(collection(database, "demandPosts"), where("status", "==", "active"))),
+    c(collection(database, "toolReviews")),
+    c(collection(database, "tools")),
+    canEdit || canModerate ? c(query(collection(database, "toolSubmissions"), where("status", "==", "pending"))) : Promise.resolve(-1),
+    canModerate ? c(query(collection(database, "reports"), where("status", "==", "open"))) : Promise.resolve(-1),
+    c(query(collection(database, "events"), where("createdAt", ">=", since(7)))),
+    ...days.map((d) => {
+      const start = new Date(now - d * 86400_000);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start.getTime() + 86400_000);
+      return c(query(collection(database, "users"), where("createdAt", ">=", Timestamp.fromDate(start)), where("createdAt", "<", Timestamp.fromDate(end))));
+    }),
+  ]);
+  return {
+    users,
+    users7d,
+    activePosts,
+    reviews,
+    communityTools,
+    pendingSubmissions: pendingSubmissions === -1 ? null : pendingSubmissions,
+    openReports: openReports === -1 ? null : openReports,
+    events7d,
+    signupsByDay: days.map((d, i) => {
+      const day = new Date(now - d * 86400_000);
+      return { day: day.toLocaleDateString("en-IN", { day: "numeric", month: "short" }), count: signups[i] ?? 0 };
+    }),
+  };
+}
+
+// ---------- penalties: suspensions (moderators) ----------
+
+export interface Suspension {
+  reason: string;
+  by: string;
+  createdAt: Timestamp | null;
+}
+
+export async function getSuspension(uid: string): Promise<Suspension | null> {
+  try {
+    const snap = await getDoc(doc(db(), "suspensions", uid));
+    if (!snap.exists()) return null;
+    const d = snap.data();
+    return { reason: String(d.reason ?? ""), by: String(d.by ?? ""), createdAt: d.createdAt ?? null };
+  } catch {
+    return null;
+  }
+}
+
+export async function suspendUser(uid: string, reason: string, byUid: string): Promise<void> {
+  await setDoc(doc(db(), "suspensions", uid), { reason: reason.trim().slice(0, 500), by: byUid, createdAt: serverTimestamp() });
+}
+
+export async function liftSuspension(uid: string): Promise<void> {
+  await deleteDoc(doc(db(), "suspensions", uid));
 }

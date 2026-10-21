@@ -13,13 +13,16 @@ import {
 } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { ensureUserProfile, getUserProfile, isAdmin } from "@/lib/db";
+import { ensureUserProfile, fetchStaffRole, getUserProfile } from "@/lib/db";
+import type { StaffRole } from "@/lib/roles";
 import type { UserProfile } from "@/lib/types";
 
 interface AuthState {
   user: User | null;
   profile: UserProfile | null;
+  /** True for any staff role — use `role` + can() from lib/roles for specific permissions. */
   admin: boolean;
+  role: StaffRole | null;
   loading: boolean;
   refreshProfile: () => Promise<void>;
 }
@@ -28,6 +31,7 @@ const AuthContext = createContext<AuthState>({
   user: null,
   profile: null,
   admin: false,
+  role: null,
   loading: true,
   refreshProfile: async () => undefined,
 });
@@ -35,7 +39,7 @@ const AuthContext = createContext<AuthState>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [admin, setAdmin] = useState(false);
+  const [role, setRole] = useState<StaffRole | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,16 +48,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (u) {
         try {
           await ensureUserProfile(u.uid, u.displayName ?? u.email?.split("@")[0] ?? "Member");
-          const [p, a] = await Promise.all([getUserProfile(u.uid), isAdmin(u.uid)]);
+          const [p, r] = await Promise.all([getUserProfile(u.uid), fetchStaffRole(u.uid)]);
           setProfile(p);
-          setAdmin(a);
+          setRole(r);
         } catch {
           setProfile(null);
-          setAdmin(false);
+          setRole(null);
         }
       } else {
         setProfile(null);
-        setAdmin(false);
+        setRole(null);
       }
       setLoading(false);
     });
@@ -64,13 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       profile,
-      admin,
+      admin: role !== null,
+      role,
       loading,
       refreshProfile: async () => {
         if (user) setProfile(await getUserProfile(user.uid));
       },
     }),
-    [user, profile, admin, loading],
+    [user, profile, role, loading],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

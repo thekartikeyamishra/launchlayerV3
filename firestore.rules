@@ -3,15 +3,39 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function isAdmin() {
-      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    // ---------- staff roles (admins/{uid}.role) ----------
+    // superadmin: everything + team management | admin: all moderation, listings, users
+    // moderator: reports, reviews, comments, posts, submissions | editor: tool listings & submissions
+    // analyst: read-only dashboard and analytics
+    function staffRole() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role
+        : '';
     }
+    function hasRole(roles) { return staffRole() in roles; }
+    function isAdmin() { return hasRole(['superadmin', 'admin']); }
+    function isModerator() { return hasRole(['superadmin', 'admin', 'moderator']); }
+    function isEditor() { return hasRole(['superadmin', 'admin', 'editor']); }
+    function isStaff() { return hasRole(['superadmin', 'admin', 'moderator', 'editor', 'analyst']); }
     function isVerifiedCreator() {
       return signedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.verifiedCreator == true;
     }
+    // Penalty system: a moderator-written suspensions/{uid} doc blocks all public contributions.
+    function notSuspended() {
+      return !exists(/databases/$(database)/documents/suspensions/$(request.auth.uid));
+    }
     function counterOnly(keys) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ---------- suspensions (penalties; written by moderators only) ----------
+    match /suspensions/{uid} {
+      allow read: if isModerator() || (signedIn() && request.auth.uid == uid);
+      allow create, update: if isModerator()
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 5 && request.resource.data.reason.size() <= 500;
+      allow delete: if isModerator();
     }
 
     // ---------- users ----------
@@ -25,16 +49,89 @@ service cloud.firestore {
       allow delete: if isAdmin() || (signedIn() && request.auth.uid == uid);
     }
 
+    // Notifications: the owner reads/marks them; any signed-in actor may create an unread one.
+    // (Previously missing — notification writes were silently denied.)
+    match /users/{uid}/notifications/{nid} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn()
+        && request.auth.uid != uid
+        && request.resource.data.read == false
+        && request.resource.data.type in ['claim', 'comment'];
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+    }
+
+    // Personal library: saved tools + private notes. Owner only.
+    match /users/{uid}/savedTools/{slug} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.note is string && request.resource.data.note.size() <= 500;
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['note'])
+        && request.resource.data.note is string && request.resource.data.note.size() <= 500;
+    }
+
+    // ---------- AI tools directory ----------
+    // Live community listings: public read, admin write (published from approved submissions).
+    match /tools/{slug} {
+      allow read: if true;
+      allow write: if isEditor();
+    }
+
+    // Public save counters: only ever move by exactly one.
+    match /toolStats/{slug} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['saveCount'])
+        && request.resource.data.saveCount == 1;
+      allow update: if signedIn()
+        && request.resource.data.keys().hasOnly(['saveCount'])
+        && (request.resource.data.saveCount - resource.data.saveCount) in [-1, 1]
+        && request.resource.data.saveCount >= 0;
+      allow delete: if false;
+    }
+
+    // Reviews: one per person per tool (doc id = slug__uid), "used for" is mandatory.
+    match /toolReviews/{reviewId} {
+      allow read: if true;
+      allow create, update: if signedIn() && notSuspended()
+        && reviewId == request.resource.data.toolSlug + '__' + request.auth.uid
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+        && request.resource.data.usedFor is string
+        && request.resource.data.usedFor.size() >= 10 && request.resource.data.usedFor.size() <= 200
+        && request.resource.data.pros.size() <= 500
+        && request.resource.data.cons.size() <= 500
+        && (resource == null || resource.data.authorId == request.auth.uid);
+      allow delete: if isModerator() || (signedIn() && resource.data.authorId == request.auth.uid);
+    }
+
+    // Free tool submissions, moderated by admins.
+    match /toolSubmissions/{id} {
+      allow read: if isEditor() || isModerator() || (signedIn() && resource.data.submitterId == request.auth.uid);
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.submitterId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.url.matches('https://.*')
+        && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 60
+        && request.resource.data.description.size() <= 1200;
+      allow update, delete: if isEditor() || isModerator();
+    }
+
     // ---------- admins (membership managed manually in console) ----------
     match /admins/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      allow write: if false;
+      allow read: if (signedIn() && request.auth.uid == uid) || hasRole(['superadmin']);
+      // Superadmins manage the team, but can never change or remove their own role (no lock-out).
+      allow create, update: if hasRole(['superadmin']) && request.auth.uid != uid
+        && request.resource.data.role in ['superadmin', 'admin', 'moderator', 'editor', 'analyst'];
+      allow delete: if hasRole(['superadmin']) && request.auth.uid != uid;
     }
 
     // ---------- demand posts ----------
     match /demandPosts/{postId} {
       allow read: if true;
-      allow create: if signedIn()
+      allow create: if signedIn() && notSuspended()
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.status == 'active'
         && request.resource.data.voteCount == 0
@@ -45,7 +142,7 @@ service cloud.firestore {
         && request.resource.data.title.size() >= 8
         && request.resource.data.title.size() <= 120
         && request.resource.data.description.size() <= 4000;
-      allow update: if isAdmin()
+      allow update: if isModerator()
         // owner edits content fields only
         || (signedIn() && resource.data.authorId == request.auth.uid
             && counterOnly(['title','description','category','budgetBand','urgency','tags','updatedAt']))
@@ -74,37 +171,42 @@ service cloud.firestore {
       }
       match /comments/{commentId} {
         allow read: if true;
-        allow create: if signedIn()
+        allow create: if signedIn() && notSuspended()
           && request.resource.data.authorId == request.auth.uid
           && request.resource.data.body is string
           && request.resource.data.body.size() >= 1
           && request.resource.data.body.size() <= 2000;
-        allow update: if isAdmin();
-        allow delete: if isAdmin() || (signedIn() && resource.data.authorId == request.auth.uid);
+        allow update: if isModerator();
+        allow delete: if isModerator() || (signedIn() && resource.data.authorId == request.auth.uid);
       }
       match /claims/{claimId} {
         allow read: if true;
-        allow create: if isVerifiedCreator()
+        allow create: if isVerifiedCreator() && notSuspended()
           && request.resource.data.creatorId == request.auth.uid
           && request.resource.data.listingUrl.matches('https://.*')
           && request.resource.data.title.size() >= 3
           && request.resource.data.title.size() <= 120;
-        allow update: if isAdmin();
-        allow delete: if isAdmin() || (signedIn() && resource.data.creatorId == request.auth.uid);
+        allow update: if isModerator();
+        allow delete: if isModerator() || (signedIn() && resource.data.creatorId == request.auth.uid);
       }
     }
 
     // ---------- reports ----------
     match /reports/{reportId} {
-      allow read: if isAdmin();
-      allow create: if signedIn() && request.resource.data.reporterId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow read: if isModerator();
+      allow create: if signedIn() && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.targetType in ['demandPost', 'comment', 'claim', 'tool']
+        && request.resource.data.reason.size() <= 1000;
+      allow update, delete: if isModerator();
     }
 
     // ---------- analytics events (append-only, first-party log) ----------
     match /events/{eventId} {
-      allow read: if isAdmin();
-      allow create: if true;
+      allow read: if isStaff();
+      allow create: if request.resource.data.keys().hasOnly(['name', 'props', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 64
+        && request.resource.data.props.size() <= 12;
       allow update, delete: if false;
     }
   }

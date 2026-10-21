@@ -8,3 +8,9 @@ out/
 firebase-debug.log
 *-service-account*.json
 .vercel
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+next-env.d.ts
+*firebase-adminsdk*.json
+*serviceAccount*.json
+*service_account*.json

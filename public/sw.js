@@ -3,7 +3,7 @@
    Strategy: network-first for navigations (live data only — Never Fake Reality),
    cache-first for static assets. No API/Firestore caching, ever. */
 
-const VERSION = "launchlayer-v1";
+const VERSION = "launchlayer-v2";
 const STATIC_CACHE = `${VERSION}-static`;
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = [

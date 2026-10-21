@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { CATEGORIES } from "./categories";
+import { TOOL_CATEGORIES } from "./directory-types";
 
 export const demandPostSchema = z.object({
   title: z
@@ -45,3 +46,34 @@ export const signInSchema = z.object({
 export const reportSchema = z.object({
   reason: z.string().trim().min(10, "Tell us what's wrong (at least 10 characters).").max(1000),
 });
+
+const TOOL_CATEGORY_SLUGS = TOOL_CATEGORIES.map((c) => c.slug) as [string, ...string[]];
+
+export const toolSubmissionSchema = z.object({
+  name: z.string().trim().min(2, "Enter the tool's name.").max(60),
+  url: z
+    .string()
+    .trim()
+    .url("Enter the full website address, starting with https://")
+    .refine((u) => u.startsWith("https://"), "The website must use https://"),
+  tagline: z.string().trim().min(10, "Describe it in one line (at least 10 characters).").max(120),
+  description: z
+    .string()
+    .trim()
+    .min(60, "Explain what it does and who it's for (at least 60 characters).")
+    .max(1200),
+  category: z.enum(TOOL_CATEGORY_SLUGS, { message: "Choose a category." }),
+  pricing: z.enum(["free", "freemium", "paid", "free-trial"]),
+  isMaker: z.boolean(),
+});
+
+export type ToolSubmissionInput = z.infer<typeof toolSubmissionSchema>;
+
+export const toolReviewSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  usedFor: z.string().trim().min(10, "Tell others what you used it for (at least 10 characters).").max(200),
+  pros: z.string().trim().max(500),
+  cons: z.string().trim().max(500),
+});
+
+export type ToolReviewInput = z.infer<typeof toolReviewSchema>;

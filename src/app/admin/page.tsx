@@ -16,10 +16,17 @@ import {
   setVerifiedCreator,
 } from "@/lib/db";
 import type { Report, UserProfile } from "@/lib/types";
+import AdminSubmissions from "@/components/AdminSubmissions";
+import AdminOverview from "@/components/AdminOverview";
+import AdminTeam from "@/components/AdminTeam";
+import SuspendControl from "@/components/SuspendControl";
+import { can, ROLE_INFO, type Permission } from "@/lib/roles";
 import { Button, EmptyState, ErrorNote, Skeleton, TextInput, VerifiedBadge } from "@/components/ui";
 
 export default function AdminPage() {
-  const { user, admin, loading } = useAuth();
+  const { user, role, loading } = useAuth();
+  const admin = role !== null;
+  const [tab, setTab] = useState<Permission>("dashboard");
   const [reports, setReports] = useState<Report[] | null>(null);
   const [requests, setRequests] = useState<Array<{ uid: string; displayName: string }> | null>(null);
   const [error, setError] = useState("");
@@ -28,7 +35,10 @@ export default function AdminPage() {
 
   const load = useCallback(async () => {
     try {
-      const [r, q] = await Promise.all([fetchOpenReports(), fetchPendingCreatorRequests()]);
+      const [r, q] = await Promise.all([
+        can(role, "reports") ? fetchOpenReports() : Promise.resolve([]),
+        can(role, "creators") ? fetchPendingCreatorRequests() : Promise.resolve([]),
+      ]);
       setReports(r);
       setRequests(q);
     } catch {
@@ -36,7 +46,7 @@ export default function AdminPage() {
       setReports([]);
       setRequests([]);
     }
-  }, []);
+  }, [role]);
 
   useEffect(() => {
     if (admin) void load();
@@ -47,7 +57,7 @@ export default function AdminPage() {
     return (
       <EmptyState
         title="Admin access required"
-        body="This console is limited to platform administrators. Admin membership is granted manually in the Firebase console (admins collection)."
+        body="This console is limited to LaunchLayer staff. Access is granted by a super admin (Team tab) or with scripts/create-admin.mjs."
       />
     );
   }
@@ -57,13 +67,41 @@ export default function AdminPage() {
       <div>
         <h1 className="font-display text-2xl font-bold">Admin console</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Every action here is permanent for users — act with a reason, not a mood.
+          Signed in as {role ? ROLE_INFO[role].label : "staff"}. Every action here is permanent for users — act with a reason, not a mood.
         </p>
       </div>
 
       {error && <ErrorNote message={error} />}
 
-      <section aria-labelledby="reports-heading">
+      <nav aria-label="Admin sections" className="-mx-1 flex gap-1 overflow-x-auto border-b border-[var(--line)] pb-px">
+        {(
+          [
+            ["dashboard", "Overview"],
+            ["submissions", "Submissions"],
+            ["reports", "Reports"],
+            ["creators", "Creators"],
+            ["users", "Users"],
+            ["team", "Team"],
+          ] as Array<[Permission, string]>
+        )
+          .filter(([p]) => can(role, p))
+          .map(([p, label]) => (
+            <button
+              key={p}
+              onClick={() => setTab(p)}
+              aria-current={tab === p ? "page" : undefined}
+              className={`whitespace-nowrap rounded-t-lg px-4 py-2 text-sm font-medium ${tab === p ? "border-b-2 border-[var(--trust)] text-[var(--trust-strong)]" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}
+            >
+              {label}
+            </button>
+          ))}
+      </nav>
+
+      {tab === "dashboard" && <AdminOverview canModerate={can(role, "reports")} canEdit={can(role, "submissions")} />}
+      {tab === "submissions" && can(role, "submissions") && <AdminSubmissions />}
+      {tab === "team" && can(role, "team") && user && <AdminTeam selfUid={user.uid} />}
+
+      {tab === "reports" && can(role, "reports") && (<section aria-labelledby="reports-heading">
         <h2 id="reports-heading" className="font-display text-lg font-bold">
           Open reports <span className="text-[var(--muted)]">({reports?.length ?? "…"})</span>
         </h2>
@@ -79,6 +117,14 @@ export default function AdminPage() {
                 <p className="mt-1 text-[var(--muted)]">Reason: {r.reason}</p>
                 <p className="mt-1 text-xs text-[var(--muted)]">Target: {r.targetPath}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
+                  {r.targetType === "tool" && r.targetPath.startsWith("tools/") && (
+                    <Link
+                      href={`/tools/${r.targetPath.split("/")[1] ?? ""}`}
+                      className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm font-medium hover:border-[var(--trust)]"
+                    >
+                      View tool
+                    </Link>
+                  )}
                   {r.targetType === "demandPost" && (
                     <>
                       <Link
@@ -124,9 +170,9 @@ export default function AdminPage() {
             ))}
           </ul>
         )}
-      </section>
+      </section>)}
 
-      <section aria-labelledby="creator-requests-heading">
+      {tab === "creators" && can(role, "creators") && (<section aria-labelledby="creator-requests-heading">
         <h2 id="creator-requests-heading" className="font-display text-lg font-bold">
           Verified Creator applications <span className="text-[var(--muted)]">({requests?.length ?? "…"})</span>
         </h2>
@@ -165,8 +211,8 @@ export default function AdminPage() {
             ))}
           </ul>
         )}
-      </section>
-      <section aria-labelledby="lookup-heading">
+      </section>)}
+      {tab === "users" && can(role, "users") && (<section aria-labelledby="lookup-heading">
         <h2 id="lookup-heading" className="font-display text-lg font-bold">User lookup</h2>
         <form
           className="mt-3 flex max-w-md gap-2"
@@ -216,12 +262,13 @@ export default function AdminPage() {
                   >
                     {profile.verifiedCreator ? "Revoke badge" : "Grant Verified Creator"}
                   </Button>
+                  {user && <SuspendControl uid={uid} actorUid={user.uid} />}
                 </li>
               ))}
             </ul>
           )
         )}
-      </section>
+      </section>)}
     </div>
   );
 }

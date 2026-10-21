@@ -15,10 +15,14 @@ export default function ReportButton({
   targetType,
   targetPath,
   targetLabel,
+  label,
+  prompt,
 }: {
   targetType: Report["targetType"];
   targetPath: string;
   targetLabel: string;
+  label?: string;
+  prompt?: string;
 }) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -34,7 +38,7 @@ export default function ReportButton({
     <div>
       {!open ? (
         <button onClick={() => setOpen(true)} className="text-xs text-[var(--muted)] underline-offset-2 hover:underline">
-          Report this {targetType === "demandPost" ? "post" : targetType}
+          {label ?? `Report this ${targetType === "demandPost" ? "post" : targetType}`}
         </button>
       ) : (
         <form
@@ -50,7 +54,7 @@ export default function ReportButton({
             setBusy(true);
             try {
               await reportContent(user.uid, targetType, targetPath, targetLabel, parsed.data.reason);
-              logEvent("content.reported.v1", { targetType });
+              logEvent(targetType === "tool" ? "tool.reported.v1" : "content.reported.v1", { targetType });
               setDone(true);
             } catch {
               setError("The report couldn't be sent. Check your connection and try again.");
@@ -59,7 +63,7 @@ export default function ReportButton({
             }
           }}
         >
-          <Field label="What's wrong with this content?" htmlFor="report-reason" error={error || undefined}>
+          <Field label={prompt ?? "What's wrong with this content?"} htmlFor="report-reason" error={error || undefined}>
             <TextArea id="report-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} />
           </Field>
           {error && !reason && <ErrorNote message={error} />}
